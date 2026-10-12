@@ -1,0 +1,865 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f6f54">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Ranges">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<title>Poker Ranges</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: Ranges links, Eingabe + Matrix in der Mitte, Pinsel/Aktionen + Kombos rechts; schmal: gestapelt */
+:root{
+  --bg:#eef0ee; --panel:#f8f9f7; --ink:#1b2420; --muted:#5d6a63; --line:#d3d9d4;
+  --cell-pair:#dde3de; --cell-s:#e6eae6; --cell-o:#eef1ee; --accent:#1f6f54; --accent-ink:#fff;
+  --danger:#b33a2e;
+  --f-ui:"Barlow Semi Condensed", "Arial Narrow", system-ui, sans-serif;
+  --f-mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#121715; --panel:#1a211e; --ink:#e3ebe6; --muted:#93a39a; --line:#2c3632;
+  --cell-pair:#26302c; --cell-s:#202925; --cell-o:#1c2421; --accent:#3fae86; --accent-ink:#06120d;
+  --danger:#e0695b; color-scheme:dark; } }
+:root[data-theme="dark"]{
+  --bg:#121715; --panel:#1a211e; --ink:#e3ebe6; --muted:#93a39a; --line:#2c3632;
+  --cell-pair:#26302c; --cell-s:#202925; --cell-o:#1c2421; --accent:#3fae86; --accent-ink:#06120d;
+  --danger:#e0695b; color-scheme:dark; }
+
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.4 var(--f-ui);padding-inline:max(16px,env(safe-area-inset-left,0px));padding-block:calc(16px + env(safe-area-inset-top,0px)) calc(32px + env(safe-area-inset-bottom,0px))}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:6px 10px;font-weight:600}
+button:hover{border-color:var(--muted)}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button.danger{color:var(--danger)}
+button.danger.armed{background:var(--danger);color:#fff;border-color:var(--danger)}
+button:disabled{opacity:.45;cursor:default}
+select{border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:5px 8px;font-weight:600}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+h2{font-size:.78rem;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin:0 0 8px;font-weight:700}
+
+.app{display:grid;grid-template-columns:220px minmax(0,1fr) 300px;gap:20px;max-width:1400px;margin:0 auto;align-items:start}
+@media (max-width:1050px){.app{grid-template-columns:minmax(0,1fr) 300px}.ranges{grid-column:1/-1}}
+@media (max-width:720px){.app{grid-template-columns:minmax(0,1fr)}}
+
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.side{display:flex;flex-direction:column;gap:16px;min-width:0}
+
+/* Ranges */
+.range-list{display:flex;flex-direction:column;gap:2px;max-height:50vh;overflow:auto}
+@media (max-width:1050px){.range-list{flex-direction:row;flex-wrap:wrap;max-height:none}}
+.range-item{text-align:left;border:1px solid transparent;background:none;font-weight:500;padding:6px 8px;border-radius:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.range-item.active{background:var(--accent);color:var(--accent-ink);font-weight:700}
+.row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+
+/* Matrix */
+.main{display:flex;flex-direction:column;gap:12px;min-width:0;max-width:720px}
+.head{display:flex;gap:8px;align-items:center}
+.name-input{flex:1;min-width:0;font-size:1.25rem;font-weight:700;border:1px solid transparent;background:transparent;border-radius:6px;padding:4px 6px}
+.name-input:hover,.name-input:focus{border-color:var(--line);background:var(--panel)}
+.grid-wrap{container-type:inline-size;width:100%}
+.grid{display:grid;grid-template-columns:repeat(13,1fr);gap:2px;touch-action:none;user-select:none;-webkit-user-select:none}
+.cell{aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:3px;font:700 clamp(8px,2.5cqi,17px) var(--f-mono);cursor:crosshair;letter-spacing:-.03em;position:relative}
+.cell.pair{background:var(--cell-pair)} .cell.s{background:var(--cell-s)} .cell.o{background:var(--cell-o)}
+.cell:not(.filled){color:var(--muted)}
+.cell.mixed{color:#fff;text-shadow:0 0 3px rgb(0 0 0 / .85),0 0 1px rgb(0 0 0 / .9)}
+.cell:hover{outline:2px solid var(--ink);outline-offset:-2px;z-index:1}
+.cell.preview{outline:2px dashed var(--ink);outline-offset:-3px;z-index:1}
+.status{font:500 .9rem var(--f-mono);color:var(--muted);min-height:1.4em;font-variant-numeric:tabular-nums}
+.status.bad{color:var(--danger)}
+
+.textbar{display:flex;gap:6px;align-items:flex-start}
+.textbar textarea{flex:1;min-width:0;font:500 15px/1.45 var(--f-mono);border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:7px 10px;resize:none;overflow:hidden;max-height:40vh;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}
+.textbar textarea::placeholder{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.textbar button{flex:none}
+@media (max-width:520px){.textbar{flex-direction:column;align-items:stretch}}
+.textbar textarea.bad{border-color:var(--danger)}
+.quick{display:flex;gap:6px;flex-wrap:wrap}
+.quick button{font-weight:500;font-size:.9rem;padding:4px 8px}
+
+/* Pinsel + Aktionen */
+.brush{display:grid;grid-template-columns:44px minmax(0,1fr);gap:10px;align-items:center;padding:8px;border-radius:8px;background:var(--bg)}
+.brush-sw{width:44px;height:44px;border-radius:5px;border:1px solid var(--line)}
+.brush-label{font-weight:700;line-height:1.2}
+.brush-label small{display:block;font-weight:500;color:var(--muted)}
+.mixrow{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px;align-items:center}
+.mixrow label{font-weight:600;font-size:.9rem}
+.actions{display:flex;flex-direction:column;gap:4px}
+.action{display:grid;grid-template-columns:16px 22px minmax(0,1fr) auto;gap:8px;align-items:center;padding:4px 4px 4px 6px;border-radius:6px;border:1px solid transparent;cursor:pointer;min-height:40px}
+.action.sel{border-color:var(--ink);background:var(--bg)}
+.action.mix{border-color:var(--muted);border-style:dashed}
+.action .key{font:700 .8rem var(--f-mono);color:var(--muted);text-align:center}
+.chip{width:22px;height:22px;border-radius:5px;box-shadow:inset 0 0 0 1px rgb(0 0 0 / .12)}
+.aname{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+button.icon{width:34px;height:34px;padding:0;display:inline-flex;align-items:center;justify-content:center;font-size:1rem;line-height:1}
+.action button.edit{border-color:transparent;background:transparent;color:var(--muted)}
+.action button.edit:hover{border-color:var(--line);color:var(--ink)}
+.action.editing{display:flex;flex-direction:column;align-items:stretch;gap:8px;cursor:default;border-color:var(--accent);background:var(--bg);padding:8px}
+.edit-top,.edit-bottom{display:flex;gap:6px;align-items:center}
+.edit-top input[type=color]{-webkit-appearance:none;appearance:none;margin:0;width:40px;height:34px;padding:2px;border:1px solid var(--line);border-radius:6px;background:var(--panel);cursor:pointer;flex:none}
+.edit-top input[type=color]::-webkit-color-swatch-wrapper{padding:0}
+.edit-top input[type=color]::-webkit-color-swatch{border:none;border-radius:4px}
+.edit-top input[type=color]::-moz-color-swatch{border:none;border-radius:4px}
+.edit-top button{flex:none}
+.edit-top input[type=text]{flex:1;min-width:0;height:34px;border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:0 8px;font-weight:600;font-size:16px}
+.edit-bottom .pos{flex:1;min-width:0;font-size:.85rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.edit-bottom .del{height:34px}
+@media (pointer:coarse){.kbd-only{display:none}button.icon{width:40px;height:40px}.edit-top input[type=color],.edit-top input[type=text],.edit-bottom .del{height:40px}.action{min-height:46px}}
+.eraser{display:flex;align-items:center;gap:8px;padding:6px;border-radius:6px;border:1px solid transparent;cursor:pointer;color:var(--muted);font-weight:600}
+.eraser.sel{border-color:var(--ink);background:var(--bg);color:var(--ink)}
+
+table.stats{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:.95rem}
+.stats td{padding:3px 0;border-bottom:1px solid var(--line)}
+.stats td.n{text-align:right;font-family:var(--f-mono);font-size:.85rem}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:middle}
+.stats tr.total td{font-weight:700;border-bottom:none}
+.hint{font-size:.85rem;color:var(--muted);margin:0}
+.sync::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--muted);margin-right:6px;vertical-align:middle}
+.sync[data-state=ok]::before{background:var(--accent)}
+.sync[data-state=err]{color:var(--danger)}
+.sync[data-state=err]::before{background:var(--danger)}
+
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:8px;font-weight:600;opacity:0;transition:opacity .2s;pointer-events:none;max-width:calc(100vw - 32px)}
+.toast.show{opacity:1}
+@media (prefers-reduced-motion:reduce){.toast{transition:none}}
+</style>
+</head>
+<body>
+<div class="app">
+  <section class="panel ranges" aria-label="Ranges">
+    <h2>Ranges</h2>
+    <div class="range-list" id="rangeList"></div>
+    <div class="row">
+      <button id="btnNew">Neu</button>
+      <button id="btnDup">Duplizieren</button>
+      <button id="btnDel" class="danger">Löschen</button>
+    </div>
+    <p class="hint sync" id="syncState"></p>
+  </section>
+
+  <main class="main">
+    <div class="head">
+      <input id="rangeName" class="name-input" aria-label="Name der Range" spellcheck="false">
+      <button id="btnCopy">Range kopieren</button>
+    </div>
+    <div class="textbar">
+      <textarea id="rangeInput" rows="1" placeholder="z. B. 22-88, A5s+, Kx" aria-label="Range-Text eingeben" spellcheck="false" autocomplete="off"></textarea>
+      <button id="btnApplyText" class="primary">Färben</button>
+      <button id="btnRemoveText">Entfernen</button>
+    </div>
+    <div class="grid-wrap"><div class="grid" id="grid"></div></div>
+    <div class="status" id="status">Klicken oder ziehen, um Felder zu färben. Zum Leeren den Radierer wählen.</div>
+    <div class="quick">
+      <button id="btnUndo" disabled>Rückgängig</button>
+      <button data-q="fillEmpty">Leere Felder füllen</button>
+      <button data-q="clearAction">Gewählte Aktion entfernen</button>
+      <button data-q="clear" class="danger">Alles leeren</button>
+    </div>
+  </main>
+
+  <div class="side">
+    <section class="panel">
+      <h2>Pinsel</h2>
+      <div class="brush">
+        <div class="brush-sw" id="brushSw"></div>
+        <div class="brush-label" id="brushLabel"></div>
+      </div>
+      <div class="mixrow">
+        <label for="mixSel">Mischen mit</label>
+        <select id="mixSel"></select>
+      </div>
+      <h2 style="margin-top:6px">Aktionen &amp; Farben</h2>
+      <div class="actions" id="actions"></div>
+      <div class="eraser" id="eraser"><span class="key">0</span>Radierer</div>
+      <div class="row"><button id="btnAddAction">+ Aktion</button></div>
+      <p class="hint kbd-only">Alle Kürzel laufen über <b>Shift</b> und gehen auch im Textfeld:<br>
+        Shift + 1–9 wählt eine Aktion (löst Mixe auf) · Shift + 0 Radierer<br>
+        Shift halten, zwei Zahlen drücken = 50/50-Mix, z. B. 1 dann 2 · 1 dann 0 = mit Fold<br>
+        Shift + Klick auf eine Aktion mischt sie dazu · ✎ zum Umbenennen und Sortieren<br>
+        Im Textfeld: Enter färbt, Shift + Enter entfernt</p>
+    </section>
+
+    <section class="panel">
+      <h2>Kombos</h2>
+      <table class="stats" id="stats"></table>
+    </section>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(() => {
+const RANKS = "AKQJT98765432";
+const STORE = "range-matrix-v1";
+const FOLD = "__fold"; // Mix-Partner "leer": 50 % Aktion, 50 % nichts
+
+// ---------- Hände ----------
+const HANDS = [];
+for (let i = 0; i < 13; i++) for (let j = 0; j < 13; j++) {
+  let name, type;
+  if (i === j) { name = RANKS[i] + RANKS[j]; type = "pair"; }
+  else if (i < j) { name = RANKS[i] + RANKS[j] + "s"; type = "s"; }
+  else { name = RANKS[j] + RANKS[i] + "o"; type = "o"; }
+  HANDS.push({ name, type, combos: type === "pair" ? 6 : type === "s" ? 4 : 12 });
+}
+const HAND_BY_NAME = Object.fromEntries(HANDS.map(h => [h.name, h]));
+
+// ---------- Text-Notation parsen ----------
+// Versteht: AA, AKs, AKo, AK, 22+, 88-55, A2s+, KTo+, A5s-A2s, K9+, Kx, Kxs, Kxo, Gewichte AJo:0.5 / AJo:50
+function parseRangeText(str) {
+  const hands = [], weights = {}, bad = [];
+  const R = "[AKQJT2-9]";
+  const idx = r => RANKS.indexOf(r);
+  for (const raw of str.split(/[\s,;]+/)) {
+    if (!raw) continue;
+    let [t, wRaw] = raw.split(":");
+    let w = null;
+    if (wRaw !== undefined) {
+      w = parseFloat(wRaw.replace(",", "."));
+      if (!(w > 0)) { bad.push(raw); continue; }
+      if (w > 1) w = w / 100;
+      w = Math.min(1, w);
+    }
+    t = t.toUpperCase().replace(/([AKQJT2-9X])([SO])/g, (m, a, b) => a + b.toLowerCase());
+    const found = new Set();
+    const addNP = (a, b, suf) => {
+      if (a === b) return;
+      const hi = RANKS[Math.min(a, b)], lo = RANKS[Math.max(a, b)];
+      if (suf !== "o") found.add(hi + lo + "s");
+      if (suf !== "s") found.add(hi + lo + "o");
+    };
+    let m;
+    if ((m = t.match(new RegExp(`^(${R})\\1$`)))) found.add(m[1] + m[1]);
+    else if ((m = t.match(new RegExp(`^(${R})\\1\\+$`)))) { for (let k = idx(m[1]); k >= 0; k--) found.add(RANKS[k] + RANKS[k]); }
+    else if ((m = t.match(new RegExp(`^(${R})\\1-(${R})\\2$`)))) {
+      const a = idx(m[1]), b = idx(m[2]);
+      for (let k = Math.min(a, b); k <= Math.max(a, b); k++) found.add(RANKS[k] + RANKS[k]);
+    }
+    else if ((m = t.match(new RegExp(`^(${R})X([so]?)$`)))) { // alle Hände mit dieser Karte; Paar nur ohne s/o
+      const r = idx(m[1]);
+      for (let k = 0; k < 13; k++) addNP(r, k, m[2]);
+      if (!m[2]) found.add(m[1] + m[1]);
+    }
+    else if ((m = t.match(new RegExp(`^(${R})(${R})([so]?)$`))) && m[1] !== m[2]) addNP(idx(m[1]), idx(m[2]), m[3]);
+    else if ((m = t.match(new RegExp(`^(${R})(${R})([so]?)\\+$`))) && m[1] !== m[2]) {
+      const hi = Math.min(idx(m[1]), idx(m[2])), lo = Math.max(idx(m[1]), idx(m[2]));
+      for (let k = lo; k > hi; k--) addNP(hi, k, m[3]);
+    }
+    else if ((m = t.match(new RegExp(`^(${R})(${R})([so]?)-(${R})(${R})([so]?)$`))) && m[1] === m[4] && m[1] !== m[2] && m[4] !== m[5]) {
+      const hi = idx(m[1]), a = idx(m[2]), b = idx(m[5]), suf = m[3] || m[6];
+      for (let k = Math.min(a, b); k <= Math.max(a, b); k++) addNP(hi, k, suf);
+    }
+    else { bad.push(raw); continue; }
+    for (const h of found) { if (!hands.includes(h)) hands.push(h); if (w !== null) weights[h] = w; }
+  }
+  return { hands, weights, bad };
+}
+
+// Ganze Range als Text: optional "# Name", dann pro Zeile "Aktion (#farbe): hände"
+const LABEL_RE = /^([^:#\n][^:\n]*?)\s*(?:\(\s*(#[0-9a-fA-F]{6})\s*\))?\s*:\s*(.*)$/;
+const isHandToken = s => /^[AKQJT2-9X]{2}[so]?\+?$/i.test(s.trim());
+function parseFullRange(str) {
+  const lines = str.split(/\n+/).map(l => l.trim()).filter(Boolean);
+  let name = null; const groups = [];
+  for (const l of lines) {
+    if (l.startsWith("#") && !/^#[0-9a-f]{6}\b/i.test(l)) { name = l.replace(/^#+\s*/, "") || null; continue; }
+    const m = l.match(LABEL_RE);
+    if (!m || isHandToken(m[1])) return null; // keine ganze Range
+    groups.push({ name: m[1].trim(), color: m[2] ? m[2].toLowerCase() : null, ...parseRangeText(m[3]) });
+  }
+  return groups.length ? { name, groups } : null;
+}
+
+// Hände kompakt schreiben: 22+, TT-77, A2s+, A5s-A2s, KJo, AJo:0.5
+function compress(map) { // map: hand -> anteil
+  const out = [], wtxt = w => w >= .999 ? "" : ":" + (+w.toFixed(3));
+  // Paare
+  let k = 0;
+  while (k < 13) {
+    const h = RANKS[k] + RANKS[k];
+    if (!(h in map)) { k++; continue; }
+    const w = map[h]; let e = k;
+    while (e + 1 < 13 && map[RANKS[e + 1] + RANKS[e + 1]] === w) e++;
+    const lo = RANKS[e] + RANKS[e];
+    out.push((k === 0 && e > 0 ? lo + "+" : e > k ? h + "-" + lo : h) + wtxt(w));
+    k = e + 1;
+  }
+  for (let hi = 0; hi < 12; hi++) for (const suf of ["s", "o"]) {
+    let k2 = hi + 1;
+    while (k2 < 13) {
+      const h = RANKS[hi] + RANKS[k2] + suf;
+      if (!(h in map)) { k2++; continue; }
+      const w = map[h]; let e = k2;
+      while (e + 1 < 13 && map[RANKS[hi] + RANKS[e + 1] + suf] === w) e++;
+      const lo = RANKS[hi] + RANKS[e] + suf;
+      out.push((k2 === hi + 1 && e > k2 ? lo + "+" : e > k2 ? h + "-" + lo : h) + wtxt(w));
+      k2 = e + 1;
+    }
+  }
+  return out.join(",");
+}
+
+// ---------- State ----------
+// Zelle = Liste aus [aktionsId, anteil], Summe ≤ 1. Rest = leer/Fold.
+const uid = () => Math.random().toString(36).slice(2, 9);
+let state;
+let brush = { a: null, b: null };
+
+function normCells(cells) {
+  const out = {};
+  for (const [h, v] of Object.entries(cells || {})) {
+    if (!HAND_BY_NAME[h]) continue;
+    if (typeof v === "string") out[h] = [[v, 1]];
+    else if (Array.isArray(v)) { const l = v.filter(x => Array.isArray(x) && typeof x[0] === "string" && x[1] > 0).map(([id, w]) => [id, Math.min(1, +w)]); if (l.length) out[h] = l; }
+  }
+  return out;
+}
+
+const PALETTE = ["#d1495b", "#2e9e7a", "#6a4fc7", "#e08e2b", "#3a7fd5", "#c2459a", "#8a9a2a", "#4fb3c9", "#9b6b43", "#7d7d7d"];
+function defaults() {
+  state = { actions: [], ranges: [], active: null };
+  const add = txt => { const r = { id: uid(), name: "", cells: {} }; state.ranges.push(r); state.active = r.id; applyFullRange(parseFullRange(txt), r); };
+  add(`# BTN Open (Beispiel)
+Raise (#d1495b): 22+,A2s+,K2s+,Q4s+,J6s+,T6s+,96s+,85s+,75s+,64s+,54s,A2o+,K8o+,Q9o+,J9o+,T9o,K7o:0.5,Q8o:0.5`);
+  add(`# BB vs BTN (Beispiel)
+Call (#2e9e7a): 99-22,ATs:0.5,A9s-A7s,A6s-A2s:0.5,K2s+,Q5s+,J7s+,T7s+,97s+,86s+,75s+,65s,54s,AQo:0.5,AJo:0.5,ATo-A8o,KTo+,QTo+,JTo
+3-Bet (#6a4fc7): TT+,AJs+,ATs:0.5,A6s-A2s:0.5,AKo,AQo:0.5,AJo:0.5`);
+  state.active = state.ranges[0].id;
+  state.isDefault = true; // nur Beispieldaten, noch nichts vom Nutzer
+  return state;
+}
+
+function load() {
+  try {
+    const s = JSON.parse(localStorage.getItem(STORE));
+    if (s && s.actions && s.ranges && s.ranges.length) { s.ranges.forEach(r => r.cells = normCells(r.cells)); return s; }
+  } catch (e) {}
+  return defaults();
+}
+function save() {
+  state.isDefault = false;
+  try { localStorage.setItem(STORE, JSON.stringify(state)); } catch (e) {}
+  scheduleSync();
+}
+
+// ---------- Speichern im Claude-Konto ----------
+// Auf der veröffentlichten Seite liegen die Daten privat unter deinem Konto
+// (data/users/<id>/…): ein Dokument "meta" (Aktionen, Reihenfolge) und eins je Range.
+// So sind sie auf jedem Gerät gleich und gehen nicht mit dem Browser-Speicher verloren.
+// Als lokale Datei geöffnet gibt es das nicht; dann bleibt es beim Browser-Speicher.
+const SYNCED = STORE + "-synced";
+let sync = null, syncTimer = null, syncChain = Promise.resolve(), lastWritten = {}, syncState = "local";
+const cellsToObj = cells => { const o = {}; for (const [h, l] of Object.entries(cells)) { o[h] = {}; for (const [id, w] of l) o[h][id] = w; } return o; };
+const objToCells = o => { const c = {}; for (const [h, m] of Object.entries(o || {})) { if (!HAND_BY_NAME[h] || !m || typeof m !== "object") continue; const l = Object.entries(m).filter(([, w]) => w > 0).map(([id, w]) => [id, Math.min(1, +w)]); if (l.length) c[h] = l; } return c; };
+function docsFromState() {
+  const d = { meta: { actions: state.actions.map(a => ({ id: a.id, name: a.name, color: a.color })), order: state.ranges.map(r => r.id), active: state.active } };
+  for (const r of state.ranges) d["r-" + r.id] = { name: r.name, cells: cellsToObj(r.cells) };
+  return d;
+}
+function stateFromDocs(map) {
+  const meta = map.meta; if (!meta || !Array.isArray(meta.actions)) return null;
+  const order = Array.isArray(meta.order) ? meta.order : [];
+  const ids = [...order, ...Object.keys(map).filter(k => k.startsWith("r-")).map(k => k.slice(2)).filter(id => !order.includes(id))];
+  const ranges = ids.filter(id => map["r-" + id]).map(id => ({ id, name: String(map["r-" + id].name ?? ""), cells: objToCells(map["r-" + id].cells) }));
+  if (!ranges.length) return null;
+  return { actions: meta.actions.filter(a => a && a.id).map(a => ({ id: String(a.id), name: String(a.name || "Aktion"), color: /^#[0-9a-f]{6}$/i.test(a.color) ? a.color : "#7d7d7d" })), ranges, active: ranges.some(r => r.id === meta.active) ? meta.active : ranges[0].id };
+}
+function setSyncState(st) {
+  syncState = st;
+  const el = $("syncState"); if (!el) return;
+  el.textContent = { local: "Nur auf diesem Gerät gespeichert", loading: "Lade aus deinem Claude-Konto …", pending: "Speichert …", ok: "In deinem Claude-Konto gespeichert", err: "Speichern fehlgeschlagen – Änderungen bleiben vorerst auf diesem Gerät" }[st];
+  el.dataset.state = st;
+}
+function scheduleSync() {
+  if (!sync) return;
+  clearTimeout(syncTimer); setSyncState("pending");
+  syncTimer = setTimeout(flushSync, 700);
+}
+function flushSync() {
+  if (!sync) return;
+  syncChain = syncChain.then(async () => {
+    const want = docsFromState(), ops = [];
+    for (const [k, v] of Object.entries(want)) {
+      const j = JSON.stringify(v);
+      if (lastWritten[k] !== j) ops.push(sync.coll.doc(k).set(v).then(() => { lastWritten[k] = j; }));
+    }
+    for (const k of Object.keys(lastWritten)) if (!(k in want)) ops.push(sync.coll.doc(k).delete().then(() => { delete lastWritten[k]; }));
+    await Promise.all(ops);
+    try { localStorage.setItem(SYNCED, "1"); } catch (e) {}
+    setSyncState("ok");
+  }).catch(e => { console.warn("Sync", e); setSyncState("err"); });
+}
+function applyRemote(remote) {
+  const keepActive = state && remote.ranges.some(r => r.id === state.active) ? state.active : remote.active;
+  state = { ...remote, active: keepActive };
+  if (brush.a && !actionById(brush.a)) brush = { a: state.actions[0]?.id ?? null, b: null };
+  if (brush.b && brush.b !== FOLD && !actionById(brush.b)) brush.b = null;
+  undoStack.length = 0; $("btnUndo").disabled = true;
+  try { localStorage.setItem(STORE, JSON.stringify(state)); } catch (e) {}
+  renderAll();
+}
+async function startSync() {
+  const use = window.claude?.use; if (!use) return;
+  const [db, user] = await Promise.all([use("db"), use("user")]);
+  if (!db || !user) return;
+  const uidv = await user.id(); if (!uidv) return;
+  const coll = db.collection("data/users/" + uidv);
+  setSyncState("loading");
+  let snap;
+  try { snap = await coll.get(); } catch (e) { console.warn("Sync", e); setSyncState("err"); return; }
+  sync = { coll };
+  const map = {}; for (const d of snap.docs) if (d.exists) map[d.id] = d.data();
+  for (const [k, v] of Object.entries(map)) lastWritten[k] = JSON.stringify(v);
+  const remote = stateFromDocs(map);
+  let neverSynced = true; try { neverSynced = !localStorage.getItem(SYNCED); } catch (e) {}
+  if (!remote) {
+    flushSync(); // erstes Mal: was hier ist, ins Konto übernehmen
+  } else {
+    const local = state;
+    applyRemote(remote);
+    // Eigene Ranges, die vor der Kontospeicherung nur auf diesem Gerät lagen, nicht verlieren
+    if (neverSynced && local && !local.isDefault) {
+      let added = 0;
+      for (const r of local.ranges) {
+        if (state.ranges.some(x => x.id === r.id)) continue;
+        const map2 = {}, cells = {};
+        for (const [h, l] of Object.entries(r.cells)) cells[h] = l.map(([id, w]) => { const a = local.actions.find(x => x.id === id); return a ? [actionFor(a.name, a.color).id, w] : null; }).filter(Boolean);
+        state.ranges.push({ id: r.id, name: uniqueName(r.name, state.ranges), cells }); added++;
+      }
+      if (added) { renderAll(); save(); toast(`${added} Ranges von diesem Gerät übernommen`); }
+    }
+    setSyncState(syncState === "pending" ? "pending" : "ok");
+    try { localStorage.setItem(SYNCED, "1"); } catch (e) {}
+  }
+  // Änderungen von anderen Geräten live übernehmen
+  coll.onSnapshot(qs => {
+    if (qs.hasPendingWrites || syncTimer && syncState === "pending" || painting) return;
+    const m = {}; for (const d of qs.docs) if (d.exists) m[d.id] = d.data();
+    const changed = Object.keys(m).length !== Object.keys(lastWritten).length || Object.entries(m).some(([k, v]) => lastWritten[k] !== JSON.stringify(v));
+    if (!changed) return;
+    const r = stateFromDocs(m); if (!r) return;
+    lastWritten = {}; for (const [k, v] of Object.entries(m)) lastWritten[k] = JSON.stringify(v);
+    if (editingId || document.activeElement === $("rangeName")) return; // nicht mitten im Tippen umwerfen
+    applyRemote(r);
+  }, e => console.warn("Sync", e));
+}
+
+const cur = () => state.ranges.find(r => r.id === state.active) || state.ranges[0];
+const actionById = id => state.actions.find(a => a.id === id);
+const actIdx = id => state.actions.findIndex(a => a.id === id);
+const getMix = (r, h) => (r.cells[h] || []).filter(([id, w]) => actionById(id) && w > 0).sort((x, y) => actIdx(x[0]) - actIdx(y[0]));
+function brushMix() {
+  if (!brush.a) return null;
+  if (!brush.b) return [[brush.a, 1]];
+  if (brush.b === FOLD) return [[brush.a, .5]];
+  return [[brush.a, .5], [brush.b, .5]].sort((x, y) => actIdx(x[0]) - actIdx(y[0]));
+}
+const mixKey = m => (m || []).map(([id, w]) => id + "@" + (+w).toFixed(3)).sort().join("|");
+const pct = w => Math.round(w * 100) + " %";
+function mixText(m) { const t = m.map(([id, w]) => `${actionById(id).name} ${pct(w)}`); const rest = 1 - m.reduce((s, x) => s + x[1], 0); if (m.length && rest > .001) t.push(`leer ${pct(rest)}`); return t.join(" / "); }
+
+// Aktion per Name finden oder anlegen; Farbe aus dem Text übernehmen
+function actionFor(name, color) {
+  let a = state.actions.find(x => x.name.trim().toLowerCase() === name.trim().toLowerCase());
+  if (!a) { a = { id: uid(), name, color: color || PALETTE[state.actions.length % PALETTE.length] }; state.actions.push(a); }
+  else if (color) a.color = color;
+  return a;
+}
+function applyFullRange(full, r) {
+  const cells = {};
+  for (const g of full.groups) {
+    const a = actionFor(g.name, g.color);
+    for (const h of g.hands) { cells[h] = (cells[h] || []).filter(x => x[0] !== a.id); cells[h].push([a.id, g.weights[h] ?? 1]); }
+  }
+  for (const h in cells) { const s = cells[h].reduce((t, x) => t + x[1], 0); if (s > 1.001) cells[h] = cells[h].map(([id, w]) => [id, w / s]); }
+  r.cells = cells;
+  if (full.name) r.name = full.name;
+}
+function rangeToText(r) {
+  const lines = [`# ${r.name}`];
+  for (const a of state.actions) {
+    const map = {};
+    for (const h of HANDS) { const e = getMix(r, h.name).find(x => x[0] === a.id); if (e) map[h.name] = +e[1].toFixed(3); }
+    if (Object.keys(map).length) lines.push(`${a.name} (${a.color}): ${compress(map)}`);
+  }
+  return lines.join("\n");
+}
+
+// ---------- Rückgängig ----------
+const undoStack = [];
+function snapshot() {
+  const r = cur();
+  undoStack.push({ id: r.id, name: r.name, cells: JSON.stringify(r.cells), actions: JSON.stringify(state.actions) });
+  if (undoStack.length > 100) undoStack.shift();
+  $("btnUndo").disabled = false;
+}
+function undo() {
+  const s = undoStack.pop(); if (!s) return;
+  const r = state.ranges.find(x => x.id === s.id);
+  if (r) { r.cells = JSON.parse(s.cells); r.name = s.name; state.actions = JSON.parse(s.actions); state.active = r.id; }
+  $("btnUndo").disabled = !undoStack.length;
+  renderAll(); save(); toast("Rückgängig gemacht");
+}
+
+// ---------- Helfer ----------
+function $(id) { return document.getElementById(id); }
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+function textOn(hex) {
+  const n = parseInt(hex.slice(1), 16), r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  const L = c => { c /= 255; return c <= .03928 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4; };
+  return 0.2126 * L(r) + 0.7152 * L(g) + 0.0722 * L(b) > 0.4 ? "#111" : "#fff";
+}
+function mixBackground(m, emptyVar) { // horizontale Streifen proportional zum Anteil
+  let pos = 0; const stops = [];
+  for (const [id, w] of m) { const c = actionById(id).color, end = pos + w * 100; stops.push(`${c} ${pos}% ${end}%`); pos = end; }
+  if (pos < 99.9) stops.push(`var(${emptyVar}) ${pos}% 100%`);
+  return `linear-gradient(to right, ${stops.join(", ")})`;
+}
+let toastT;
+function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("show"), 2400); }
+function armed(btn, label, fn) { // Zwei-Klick-Bestätigung ohne Dialog
+  if (btn.classList.contains("armed")) { btn.classList.remove("armed"); btn.textContent = btn.dataset.orig; fn(); return; }
+  btn.dataset.orig = btn.textContent; btn.textContent = label; btn.classList.add("armed");
+  setTimeout(() => { if (btn.classList.contains("armed")) { btn.classList.remove("armed"); btn.textContent = btn.dataset.orig; } }, 3000);
+}
+function uniqueName(name, list) {
+  if (!list.some(r => r.name === name)) return name;
+  let n = 2; while (list.some(r => r.name === `${name} (${n})`)) n++; return `${name} (${n})`;
+}
+const EMPTY_VAR = { pair: "--cell-pair", s: "--cell-s", o: "--cell-o" };
+function setStatus(msg, bad) { const s = $("status"); s.textContent = msg; s.classList.toggle("bad", !!bad); }
+
+// ---------- Render ----------
+const grid = $("grid"), cellEls = {};
+for (const h of HANDS) {
+  const d = document.createElement("div");
+  d.className = "cell " + h.type; d.textContent = h.name; d.dataset.h = h.name;
+  grid.appendChild(d); cellEls[h.name] = d;
+}
+
+function renderGrid() {
+  const r = cur();
+  for (const h of HANDS) {
+    const el = cellEls[h.name], m = getMix(r, h.name);
+    el.classList.toggle("filled", m.length > 0);
+    const solid = m.length === 1 && m[0][1] >= .999;
+    el.classList.toggle("mixed", m.length > 0 && !solid);
+    if (!m.length) { el.style.background = ""; el.style.color = ""; el.title = h.name; continue; }
+    const c = actionById(m[0][0]).color;
+    el.style.background = solid ? c : mixBackground(m, EMPTY_VAR[h.type]);
+    el.style.color = solid ? textOn(c) : "";
+    el.title = `${h.name} · ${mixText(m)}`;
+  }
+}
+function renderStats() {
+  const r = cur(), sums = {};
+  for (const h of HANDS) for (const [id, w] of getMix(r, h.name)) sums[id] = (sums[id] || 0) + w * h.combos;
+  let total = 0, rows = "";
+  const f = n => (Math.round(n * 10) / 10).toLocaleString("de-DE");
+  for (const a of state.actions) {
+    const c = sums[a.id] || 0; total += c;
+    rows += `<tr><td><span class="sw" style="background:${a.color}"></span>${esc(a.name)}</td><td class="n">${f(c)}</td><td class="n">${(c / 13.26).toFixed(1)}%</td></tr>`;
+  }
+  rows += `<tr class="total"><td>Gesamt</td><td class="n">${f(total)}</td><td class="n">${(total / 13.26).toFixed(1)}%</td></tr>`;
+  $("stats").innerHTML = rows;
+}
+function brushLabelHtml() {
+  const a = actionById(brush.a);
+  if (!a) return "Radierer<small>entfernt Farben</small>";
+  return brush.b ? `${esc(mixText(brushMix()))}<small>50/50-Mix</small>` : `${esc(a.name)}<small>100 %</small>`;
+}
+function renderBrush() {
+  const sw = $("brushSw"), a = actionById(brush.a);
+  if (brush.b && brush.b !== FOLD && !actionById(brush.b)) brush.b = null;
+  if (!a) sw.style.background = "repeating-linear-gradient(45deg, var(--line) 0 4px, transparent 4px 8px)";
+  else sw.style.background = !brush.b ? a.color : mixBackground(brushMix(), "--cell-s");
+  $("brushLabel").innerHTML = brushLabelHtml();
+  const s = $("mixSel");
+  s.innerHTML = `<option value="">— kein Mix</option><option value="${FOLD}">Leer / Fold</option>` +
+    state.actions.filter(x => x.id !== brush.a).map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join("");
+  s.value = brush.b || ""; s.disabled = !a;
+  updatePreview();
+}
+// Aktionsliste. Normal: Tipp auf die Zeile = Pinsel wählen (nimmt keinem Eingabefeld den Fokus).
+// Bearbeiten nur über ✎: dann Farbe, Name, ▲▼ und Löschen für genau diese Zeile.
+let editingId = null;
+const finePointer = matchMedia("(pointer: fine)").matches;
+function renderActions() {
+  const box = $("actions");
+  const editing = box.querySelector(".action.editing input[type=text]");
+  const keepFocus = editing && document.activeElement === editing;
+  box.innerHTML = "";
+  state.actions.forEach((a, i) => box.appendChild(editingId === a.id ? editRow(a, i) : viewRow(a, i)));
+  if (keepFocus) { const n = box.querySelector(".action.editing input[type=text]"); n?.focus(); }
+  $("eraser").classList.toggle("sel", brush.a === null);
+  renderBrush();
+}
+function viewRow(a, i) {
+  const row = document.createElement("div");
+  row.className = "action" + (brush.a === a.id ? " sel" : "") + (brush.b === a.id ? " mix" : "");
+  row.innerHTML = `<span class="key">${i < 9 ? i + 1 : ""}</span><span class="chip" style="background:${a.color}"></span><span class="aname">${esc(a.name)}</span><button class="icon edit" title="Bearbeiten" aria-label="${esc(a.name)} bearbeiten">✎</button>`;
+  // Fokus nicht wegnehmen (z. B. aus dem Range-Textfeld)
+  row.addEventListener("mousedown", e => { if (!e.target.closest("button")) e.preventDefault(); });
+  row.addEventListener("click", e => {
+    if (e.target.closest(".edit")) { editingId = a.id; renderActions(); if (finePointer) $("n-" + a.id)?.select(); return; }
+    if (e.shiftKey && brush.a && brush.a !== a.id) brush.b = brush.b === a.id ? null : a.id;
+    else if (!e.shiftKey) brush = { a: a.id, b: null };
+    renderActions();
+  });
+  return row;
+}
+function editRow(a, i) {
+  const row = document.createElement("div");
+  row.className = "action editing";
+  const last = state.actions.length - 1;
+  row.innerHTML = `
+    <div class="edit-top">
+      <input type="color" id="c-${a.id}" value="${a.color}" aria-label="Farbe">
+      <input type="text" id="n-${a.id}" value="${esc(a.name)}" aria-label="Name der Aktion" spellcheck="false" enterkeyhint="done">
+      <button class="icon done primary" title="Fertig" aria-label="Fertig">✓</button>
+    </div>
+    <div class="edit-bottom">
+      <button class="icon up" title="Nach oben" aria-label="Nach oben" ${i === 0 ? "disabled" : ""}>▲</button>
+      <button class="icon down" title="Nach unten" aria-label="Nach unten" ${i === last ? "disabled" : ""}>▼</button>
+      <span class="pos">Platz ${i + 1}<span class="kbd-only">${i < 9 ? " · Shift + " + (i + 1) : ""}</span></span>
+      <button class="del danger">Löschen</button>
+    </div>`;
+  row.querySelector("input[type=color]").addEventListener("input", e => { a.color = e.target.value; renderGrid(); renderStats(); renderBrush(); save(); });
+  const nameIn = row.querySelector("input[type=text]");
+  const finish = () => { if (!a.name.trim()) a.name = "Aktion"; editingId = null; renderAll(); save(); };
+  nameIn.addEventListener("input", e => { a.name = e.target.value; renderStats(); renderBrush(); save(); });
+  nameIn.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === "Escape") { e.preventDefault(); finish(); } });
+  row.querySelector(".done").addEventListener("click", finish);
+  const move = d => {
+    const j = i + d; if (j < 0 || j > last) return;
+    [state.actions[i], state.actions[j]] = [state.actions[j], state.actions[i]];
+    renderAll(); save();
+  };
+  row.querySelector(".up").addEventListener("click", () => move(-1));
+  row.querySelector(".down").addEventListener("click", () => move(1));
+  const del = row.querySelector(".del");
+  del.addEventListener("click", () => armed(del, "Wirklich löschen?", () => {
+    state.actions = state.actions.filter(x => x.id !== a.id);
+    for (const r of state.ranges) for (const h in r.cells) { r.cells[h] = r.cells[h].filter(x => x[0] !== a.id); if (!r.cells[h].length) delete r.cells[h]; }
+    if (brush.a === a.id) brush = { a: state.actions[0]?.id ?? null, b: null };
+    if (brush.b === a.id) brush.b = null;
+    editingId = null; undoStack.length = 0; $("btnUndo").disabled = true;
+    renderAll(); save();
+  }));
+  return row;
+}
+function renderRanges() {
+  const box = $("rangeList"); box.innerHTML = "";
+  for (const r of state.ranges) {
+    const b = document.createElement("button");
+    b.className = "range-item" + (r.id === state.active ? " active" : "");
+    b.textContent = r.name || "(ohne Namen)";
+    b.addEventListener("click", () => { state.active = r.id; renderAll(); save(); });
+    box.appendChild(b);
+  }
+  if (document.activeElement !== $("rangeName")) $("rangeName").value = cur().name;
+}
+function renderAll() { renderRanges(); renderActions(); renderGrid(); renderStats(); }
+
+// ---------- Malen ----------
+let painting = false, mode = "paint", lastCell = null;
+function setCell(h) {
+  const cells = cur().cells, m = brushMix();
+  if (mode === "paint" && m) cells[h] = m.map(x => [...x]); else delete cells[h];
+}
+grid.addEventListener("pointerdown", e => {
+  const c = e.target.closest(".cell"); if (!c) return;
+  e.preventDefault();
+  snapshot();
+  const h = c.dataset.h, m = brushMix();
+  mode = m ? "paint" : "erase"; // Leeren nur mit dem Radierer, nie durch erneutes Klicken
+  painting = true; lastCell = h; setCell(h); renderGrid(); renderStats();
+});
+grid.addEventListener("pointermove", e => {
+  const el = document.elementFromPoint(e.clientX, e.clientY)?.closest?.(".cell");
+  if (el && !rIn.value.trim()) { const hd = HAND_BY_NAME[el.dataset.h], m = getMix(cur(), hd.name);
+    setStatus(`${hd.name} · ${hd.combos} Kombos${m.length ? " · " + mixText(m) : ""}`); }
+  if (!painting || !el || el.dataset.h === lastCell) return;
+  lastCell = el.dataset.h; setCell(lastCell); renderGrid(); renderStats();
+});
+window.addEventListener("pointerup", () => { if (painting) { painting = false; save(); } });
+grid.addEventListener("contextmenu", e => e.preventDefault());
+
+// ---------- Range-Textfeld ----------
+const rIn = $("rangeInput");
+let preview = [];
+function autoSize() {
+  rIn.style.height = "auto";
+  if (!rIn.value) { rIn.style.overflowY = "hidden"; return; } // leer: eine Zeile, Platzhalter wird gekürzt
+  const max = window.innerHeight * .4;
+  rIn.style.height = Math.min(rIn.scrollHeight + 2, max) + "px";
+  rIn.style.overflowY = rIn.scrollHeight + 2 > max ? "auto" : "hidden";
+}
+window.addEventListener("resize", autoSize);
+document.fonts?.ready?.then(autoSize);
+const MOD = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent) ? "⌘" : "Strg"; // nur für Rückgängig
+let modHeld = false; // Shift gedrückt, während das Feld fokussiert ist → Button zeigt "Entfernen"
+function updatePreview() {
+  for (const h of preview) cellEls[h].classList.remove("preview");
+  preview = [];
+  const txt = rIn.value.trim(), btn = $("btnApplyText");
+  rIn.classList.remove("bad");
+  btn.textContent = brush.a ? "Färben" : "Entfernen";
+  if (!txt) return;
+  const full = parseFullRange(txt);
+  const p = full ? null : parseRangeText(txt);
+  const hands = full ? [...new Set(full.groups.flatMap(g => g.hands))] : p.hands;
+  const bad = full ? full.groups.flatMap(g => g.bad) : p.bad;
+  rIn.classList.toggle("bad", bad.length > 0);
+  const badTxt = bad.length ? ` · nicht verstanden: ${bad.join(" ")}` : "";
+  const removeWhat = brush.a ? actionById(brush.a).name : "alles";
+  const keys = ` · Enter ${full ? "ersetzt Range" : brush.a ? "färbt" : "entfernt"} · Shift+Enter entfernt ${removeWhat}`;
+  if (full) {
+    btn.textContent = "Range ersetzen";
+    setStatus(`Ganze Range${full.name ? " „" + full.name + "“" : ""}: ${full.groups.map(g => g.name).join(", ")} · ${hands.length} Hände` + (badTxt || keys), bad.length > 0);
+  } else {
+    preview = hands;
+    for (const h of preview) cellEls[h].classList.add("preview");
+    const combos = hands.reduce((s, h) => s + HAND_BY_NAME[h].combos, 0);
+    setStatus(`${hands.length} Hände · ${combos} Kombos` + (badTxt || keys), bad.length > 0);
+  }
+  if (modHeld) btn.textContent = "Entfernen";
+}
+function applyText(remove) {
+  const txt = rIn.value.trim();
+  if (!txt) { toast("Erst Range-Text eingeben"); rIn.focus(); return; }
+  const full = parseFullRange(txt);
+  const p = full ? null : parseRangeText(txt);
+  const hands = full ? [...new Set(full.groups.flatMap(g => g.hands))] : p.hands;
+  if (!hands.length) { toast("Text nicht verstanden"); return; }
+  snapshot();
+  const cells = cur().cells, m = brushMix();
+  if (remove || (!full && !m)) {
+    // Nur Felder mit der gewählten Aktion (auch Mixe, die sie enthalten); Radierer = alles
+    const target = brush.a, a = actionById(target);
+    let n = 0;
+    for (const h of hands) if (cells[h] && (!target || cells[h].some(x => x[0] === target))) { delete cells[h]; n++; }
+    toast(target ? `${n} Hände mit ${a.name} entfernt` : `${n} Hände entfernt`);
+  } else if (full) {
+    applyFullRange(full, cur());
+    toast(`Range ersetzt${full.name ? ": " + full.name : ""} · Rückgängig mit ${MOD}+Z`);
+  } else {
+    for (const h of hands) cells[h] = m.map(x => [...x]);
+    toast(`${hands.length} Hände gefärbt`);
+  }
+  rIn.value = ""; autoSize(); renderAll(); save(); setStatus("");
+}
+rIn.addEventListener("input", () => { autoSize(); updatePreview(); });
+rIn.addEventListener("keydown", e => {
+  if (e.key === "Enter") { e.preventDefault(); applyText(e.shiftKey); return; }
+  if (e.key === "Escape") { rIn.value = ""; autoSize(); updatePreview(); setStatus(""); return; }
+  if (e.key === "Shift" && !modHeld) { modHeld = true; updatePreview(); }
+});
+const releaseMod = () => { if (modHeld) { modHeld = false; updatePreview(); } };
+rIn.addEventListener("keyup", e => { if (e.key === "Shift") releaseMod(); });
+rIn.addEventListener("blur", releaseMod);
+$("btnApplyText").addEventListener("click", e => applyText(e.shiftKey));
+$("btnRemoveText").addEventListener("click", () => applyText(true));
+
+// ---------- Kopieren ----------
+$("btnCopy").addEventListener("click", async () => {
+  const text = rangeToText(cur());
+  try { await navigator.clipboard.writeText(text); toast("Range kopiert"); }
+  catch (e) {
+    const ta = document.createElement("textarea"); ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select();
+    let ok = false; try { ok = document.execCommand("copy"); } catch (_) {}
+    ta.remove();
+    if (ok) toast("Range kopiert");
+    else { rIn.value = text; autoSize(); rIn.focus(); rIn.select(); updatePreview(); toast("Kopieren blockiert – Text steht markiert im Eingabefeld"); }
+  }
+});
+
+// ---------- Schnellaktionen ----------
+$("btnUndo").addEventListener("click", undo);
+document.querySelector(".quick").addEventListener("click", e => {
+  const q = e.target.dataset.q; if (!q) return;
+  const cells = cur().cells, m = brushMix();
+  if (q === "fillEmpty") { if (!m) return toast("Erst eine Aktion wählen"); snapshot(); for (const h of HANDS) if (!getMix(cur(), h.name).length) cells[h.name] = m.map(x => [...x]); }
+  if (q === "clearAction") { if (!brush.a) return; snapshot(); for (const h in cells) { cells[h] = cells[h].filter(x => x[0] !== brush.a); if (!cells[h].length) delete cells[h]; } }
+  if (q === "clear") return armed(e.target, "Wirklich leeren?", () => { snapshot(); cur().cells = {}; renderAll(); save(); });
+  renderAll(); save();
+});
+
+// ---------- Ranges ----------
+$("rangeName").addEventListener("input", e => { cur().name = e.target.value; renderRanges(); save(); });
+$("btnNew").addEventListener("click", () => {
+  const r = { id: uid(), name: uniqueName("Neue Range", state.ranges), cells: {} };
+  state.ranges.push(r); state.active = r.id; renderAll(); save(); $("rangeName").select();
+});
+$("btnDup").addEventListener("click", () => {
+  const c = cur(), r = { id: uid(), name: uniqueName(c.name + " Kopie", state.ranges), cells: JSON.parse(JSON.stringify(c.cells)) };
+  state.ranges.splice(state.ranges.indexOf(c) + 1, 0, r); state.active = r.id; renderAll(); save();
+});
+$("btnDel").addEventListener("click", e => armed(e.target, "Sicher?", () => {
+  const i = state.ranges.indexOf(cur());
+  state.ranges.splice(i, 1);
+  if (!state.ranges.length) state.ranges.push({ id: uid(), name: "Neue Range", cells: {} });
+  state.active = state.ranges[Math.max(0, i - 1)].id;
+  undoStack.length = 0; $("btnUndo").disabled = true;
+  renderAll(); save();
+}));
+
+// ---------- Aktionen & Pinsel ----------
+$("btnAddAction").addEventListener("click", () => {
+  const a = { id: uid(), name: "Aktion " + (state.actions.length + 1), color: PALETTE[state.actions.length % PALETTE.length] };
+  state.actions.push(a); brush = { a: a.id, b: null }; editingId = a.id; renderAll(); save();
+  if (finePointer) $("n-" + a.id)?.select();
+});
+$("eraser").addEventListener("mousedown", e => e.preventDefault());
+$("eraser").addEventListener("click", () => { brush = { a: null, b: null }; renderActions(); });
+$("mixSel").addEventListener("change", e => { brush.b = e.target.value || null; renderActions(); });
+// Pinsel per Tastatur – überall gleich, auch im Textfeld:
+//   Shift + Zahl            → nur diese Aktion (löst einen Mix auf), Shift + 0 = Radierer
+//   Shift halten, 2. Zahl   → 50/50-Mix mit der ersten (0 = mit leer/Fold)
+// Außerhalb von Eingabefeldern geht die Zahl auch ohne Shift (immer ohne Mix).
+let chord = false;
+function brushKey(n, inChord) {
+  const id = n === 0 ? null : state.actions[n - 1]?.id;
+  if (n !== 0 && !id) return false;
+  if (!inChord) brush = { a: id, b: null };
+  else if (!brush.a) brush = id ? { a: id, b: FOLD } : brush;
+  else if (id !== brush.a) brush.b = id || FOLD;
+  renderActions();
+  return true;
+}
+document.addEventListener("keydown", e => {
+  const d = /^Digit(\d)$/.exec(e.code);
+  const inText = e.target.matches("input,textarea,select");
+  if (d && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && (!inText || e.target === rIn)) {
+    e.preventDefault();
+    if (brushKey(+d[1], chord)) chord = true;
+    return;
+  }
+  if (inText) return;
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") { e.preventDefault(); undo(); return; }
+  if (d && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) brushKey(+d[1], false);
+}, true);
+document.addEventListener("keyup", e => { if (e.key === "Shift") chord = false; });
+window.addEventListener("blur", () => { chord = false; });
+
+// ---------- Start ----------
+state = load();
+brush = { a: state.actions[0]?.id ?? null, b: null };
+renderAll();
+setSyncState("local");
+startSync();
+})();
+</script>
+</body>
+</html>
