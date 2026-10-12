@@ -81,7 +81,7 @@ h2{font-size:.78rem;text-transform:uppercase;letter-spacing:.09em;color:var(--mu
 .textbar textarea{flex:1;min-width:0;font:500 15px/1.45 var(--f-mono);border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:7px 10px;resize:none;overflow:hidden;max-height:40vh;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}
 .textbar textarea::placeholder{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .textbar button{flex:none}
-@media (max-width:520px){.textbar{flex-direction:column;align-items:stretch}}
+@media (max-width:520px){.textbar{display:grid;grid-template-columns:1fr 1fr}.textbar textarea{grid-column:1/-1}}
 .textbar textarea.bad{border-color:var(--danger)}
 .quick{display:flex;gap:6px;flex-wrap:wrap}
 .quick button{font-weight:500;font-size:.9rem;padding:4px 8px}
@@ -123,6 +123,18 @@ table.stats{width:100%;border-collapse:collapse;font-variant-numeric:tabular-num
 .sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:middle}
 .stats tr.total td{font-weight:700;border-bottom:none}
 .hint{font-size:.85rem;color:var(--muted);margin:0}
+/* Pinsel-Leiste über der Matrix – nur wenn die Seitenleiste unter die Matrix rutscht */
+.palette{display:none}
+@media (max-width:720px){
+  .palette{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin-inline:-16px;padding-inline:16px}
+  .palette::-webkit-scrollbar{display:none}
+}
+.pchip{flex:none;display:inline-flex;align-items:center;gap:7px;height:40px;padding:0 13px;border-radius:20px;border:1px solid var(--line);background:var(--panel);font-weight:600;white-space:nowrap}
+.pchip .dot{width:14px;height:14px;border-radius:4px;flex:none;box-shadow:inset 0 0 0 1px rgb(0 0 0 / .12)}
+.pchip.sel{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+.pchip.partner{border-style:dashed;border-color:var(--ink)}
+.pchip.toggle.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.pchip.eraser-chip .dot{background:repeating-linear-gradient(45deg,var(--muted) 0 2px,transparent 2px 4px)}
 .sync::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--muted);margin-right:6px;vertical-align:middle}
 .sync[data-state=ok]::before{background:var(--accent)}
 .sync[data-state=err]{color:var(--danger)}
@@ -156,6 +168,7 @@ table.stats{width:100%;border-collapse:collapse;font-variant-numeric:tabular-num
       <button id="btnApplyText" class="primary">Färben</button>
       <button id="btnRemoveText">Entfernen</button>
     </div>
+    <div class="palette" id="palette" aria-label="Pinsel"></div>
     <div class="grid-wrap"><div class="grid" id="grid"></div></div>
     <div class="status" id="status">Klicken oder ziehen, um Felder zu färben. Zum Leeren den Radierer wählen.</div>
     <div class="quick">
@@ -589,6 +602,7 @@ function renderBrush() {
     state.actions.filter(x => x.id !== brush.a).map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join("");
   s.value = brush.b || ""; s.disabled = !a;
   updatePreview();
+  renderPalette();
 }
 // Aktionsliste. Normal: Tipp auf die Zeile = Pinsel wählen (nimmt keinem Eingabefeld den Fokus).
 // Bearbeiten nur über ✎: dann Farbe, Name, ▲▼ und Löschen für genau diese Zeile.
@@ -694,6 +708,32 @@ grid.addEventListener("pointermove", e => {
 });
 window.addEventListener("pointerup", () => { if (painting) { painting = false; save(); } });
 grid.addEventListener("contextmenu", e => e.preventDefault());
+
+// ---------- Pinsel-Leiste (Handy) ----------
+// Tipp auf Aktion = nur diese. "½ Mix" an, dann Tipp auf zweite Aktion (oder "Leer") = 50/50.
+let mixMode = false;
+function renderPalette() {
+  const box = $("palette"); if (!box) return;
+  if (!brush.a) mixMode = false;
+  const chip = (cls, html, label, fn) => { const b = document.createElement("button"); b.type = "button"; b.className = "pchip " + cls; b.innerHTML = html; b.setAttribute("aria-label", label); b.addEventListener("mousedown", e => e.preventDefault()); b.addEventListener("click", fn); return b; };
+  box.innerHTML = "";
+  for (const a of state.actions) {
+    const cls = (brush.a === a.id ? "sel" : "") + (brush.b === a.id ? " partner" : "");
+    box.appendChild(chip(cls, `<span class="dot" style="background:${a.color}"></span>${esc(a.name)}`, a.name, () => {
+      if (mixMode && brush.a && brush.a !== a.id) { brush.b = brush.b === a.id ? null : a.id; mixMode = false; }
+      else { brush = { a: a.id, b: null }; mixMode = false; }
+      renderActions();
+    }));
+  }
+  if (mixMode) box.appendChild(chip(brush.b === FOLD ? "partner" : "", `<span class="dot" style="background:var(--cell-s)"></span>Leer`, "Mit leer mischen", () => { brush.b = brush.b === FOLD ? null : FOLD; mixMode = false; renderActions(); }));
+  box.appendChild(chip("toggle" + (mixMode || brush.b ? " on" : ""), mixMode ? "½ Partner wählen" : brush.b ? "½ Mix ✕" : "½ Mix", "50/50-Mix", () => {
+    if (!brush.a) { toast("Erst eine Aktion wählen"); return; }
+    if (brush.b && !mixMode) { brush.b = null; renderActions(); return; } // Mix auflösen
+    mixMode = !mixMode; renderPalette();
+  }));
+  box.appendChild(chip("eraser-chip" + (brush.a === null ? " sel" : ""), `<span class="dot"></span>Radierer`, "Radierer", () => { brush = { a: null, b: null }; mixMode = false; renderActions(); }));
+  const selEl = box.querySelector(".pchip.sel"); if (selEl && box.scrollWidth > box.clientWidth) selEl.scrollIntoView({ block: "nearest", inline: "nearest" });
+}
 
 // ---------- Range-Textfeld ----------
 const rIn = $("rangeInput");
