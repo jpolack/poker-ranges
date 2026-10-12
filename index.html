@@ -139,6 +139,7 @@ table.stats{width:100%;border-collapse:collapse;font-variant-numeric:tabular-num
 .sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:middle}
 .stats tr.total td{font-weight:700;border-bottom:none}
 .hint{font-size:.85rem;color:var(--muted);margin:0}
+button.linkish{border:none;background:none;padding:0;font:inherit;color:var(--accent);text-decoration:underline;text-underline-offset:2px;cursor:pointer}
 .sync::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--muted);margin-right:6px;vertical-align:middle}
 .sync[data-state=ok]::before{background:var(--accent)}
 .sync[data-state=err]{color:var(--danger)}
@@ -161,6 +162,7 @@ table.stats{width:100%;border-collapse:collapse;font-variant-numeric:tabular-num
       <button id="btnDel" class="danger">Löschen</button>
     </div>
     <p class="hint sync" id="syncState"></p>
+    <p class="hint version-row"><span id="versionLabel"></span> · <button type="button" class="linkish" id="btnCheckUpdate">Nach Update suchen</button></p>
   </section>
 
   <main class="main">
@@ -218,7 +220,7 @@ table.stats{width:100%;border-collapse:collapse;font-variant-numeric:tabular-num
 
 <script>
 (() => {
-const BUILD = "20261012-220455"; // wird beim Veröffentlichen gesetzt (scripts/bump-version.py)
+const BUILD = "20261012-220608"; // wird beim Veröffentlichen gesetzt (scripts/bump-version.py)
 const RANKS = "AKQJT98765432";
 const STORE = "range-matrix-v1";
 const FOLD = "__fold"; // Mix-Partner "leer": 50 % Aktion, 50 % nichts
@@ -896,19 +898,20 @@ document.addEventListener("touchmove", e => { if (e.touches.length > 1) e.preven
 // frisch geladen – sofort, wenn du gerade nichts tippst, sonst über einen Hinweis.
 // Deine Ranges liegen im Browser-Speicher und bleiben dabei erhalten.
 let updateReady = null;
-async function checkUpdate() {
-  if (BUILD === "dev" || !/^https?:/.test(location.protocol)) return;
+async function checkUpdate(manual) {
+  if (BUILD === "dev" || !/^https?:/.test(location.protocol)) { if (manual) toast("Update-Prüfung nur auf der GitHub-Seite"); return; }
   try {
     const r = await fetch("version.json?t=" + Date.now(), { cache: "no-store" });
-    if (!r.ok) return;
+    if (!r.ok) { if (manual) toast("Update-Prüfung fehlgeschlagen"); return; }
     const { build } = await r.json();
-    if (!build || build === BUILD) return;
+    if (!build || build === BUILD) { if (manual) toast("Du hast die neueste Version"); return; }
     let tried = null; try { tried = sessionStorage.getItem("update-tried"); } catch (e) {}
-    if (tried === build) return; // schon versucht, CDN liefert noch alt – nicht in Schleife laden
+    if (tried === build && !manual) return; // schon versucht, CDN liefert noch alt – nicht in Schleife laden
+    if (manual) { updateReady = build; applyUpdate(); return; }
     updateReady = build;
     const busy = document.activeElement?.matches?.("input,textarea,select") || rIn.value.trim() || editingId || painting;
     if (busy) showUpdateBanner(); else applyUpdate();
-  } catch (e) {}
+  } catch (e) { if (manual) toast("Keine Verbindung"); }
 }
 async function applyUpdate() {
   const build = updateReady; if (!build) return;
@@ -925,6 +928,8 @@ function showUpdateBanner() {
   b.addEventListener("click", applyUpdate);
   document.body.appendChild(b);
 }
+$("versionLabel").textContent = "Version " + BUILD;
+$("btnCheckUpdate").addEventListener("click", () => checkUpdate(true));
 checkUpdate();
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") checkUpdate(); });
 window.addEventListener("pageshow", e => { if (e.persisted) checkUpdate(); });
