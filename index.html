@@ -49,7 +49,20 @@ h2{font-size:.78rem;text-transform:uppercase;letter-spacing:.09em;color:var(--mu
 
 .app{display:grid;grid-template-columns:220px minmax(0,1fr) 300px;gap:20px;max-width:1400px;margin:0 auto;align-items:start}
 @media (max-width:1050px){.app{grid-template-columns:minmax(0,1fr) 300px}.ranges{grid-column:1/-1}}
-@media (max-width:720px){.app{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:720px){
+  .app{grid-template-columns:minmax(0,1fr)}
+  .app > .side{display:contents}
+  .brush-panel{order:1}.main{order:2}.stats-panel{order:3}.ranges{order:4}
+  /* kompakter Pinsel, damit die Matrix ins Bild passt */
+  .app .brush-panel{padding:10px;gap:6px}
+  .app .brush-panel > h2:first-child,.app .brush-panel .actions-h{display:none}
+  .app .brush{grid-template-columns:28px minmax(0,1fr);padding:6px 8px;gap:8px}
+  .app .brush-sw{width:28px;height:28px}
+  .app .brush-label small{display:inline;margin-left:6px}
+  .app .actions{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+  .app .action{min-height:42px;grid-template-columns:14px 18px minmax(0,1fr) auto;gap:6px}
+  .app .action.editing{grid-column:1/-1;display:flex}
+}
 
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px;min-width:0}
 .side{display:flex;flex-direction:column;gap:16px;min-width:0}
@@ -115,6 +128,8 @@ button.icon{width:34px;height:34px;padding:0;display:inline-flex;align-items:cen
 .edit-bottom .del{height:34px}
 @media (pointer:coarse){.kbd-only{display:none}button.icon{width:40px;height:40px}.edit-top input[type=color],.edit-top input[type=text],.edit-bottom .del{height:40px}.action{min-height:46px}}
 .eraser{display:flex;align-items:center;gap:8px;padding:6px;border-radius:6px;border:1px solid transparent;cursor:pointer;color:var(--muted);font-weight:600}
+.tools-row{display:flex;gap:8px;align-items:center;justify-content:space-between}
+.tools-row .eraser{flex:1}
 .eraser.sel{border-color:var(--ink);background:var(--bg);color:var(--ink)}
 
 table.stats{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:.95rem}
@@ -123,18 +138,6 @@ table.stats{width:100%;border-collapse:collapse;font-variant-numeric:tabular-num
 .sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:middle}
 .stats tr.total td{font-weight:700;border-bottom:none}
 .hint{font-size:.85rem;color:var(--muted);margin:0}
-/* Pinsel-Leiste über der Matrix – nur wenn die Seitenleiste unter die Matrix rutscht */
-.palette{display:none}
-@media (max-width:720px){
-  .palette{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin-inline:-16px;padding-inline:16px}
-  .palette::-webkit-scrollbar{display:none}
-}
-.pchip{flex:none;display:inline-flex;align-items:center;gap:7px;height:40px;padding:0 13px;border-radius:20px;border:1px solid var(--line);background:var(--panel);font-weight:600;white-space:nowrap}
-.pchip .dot{width:14px;height:14px;border-radius:4px;flex:none;box-shadow:inset 0 0 0 1px rgb(0 0 0 / .12)}
-.pchip.sel{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
-.pchip.partner{border-style:dashed;border-color:var(--ink)}
-.pchip.toggle.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
-.pchip.eraser-chip .dot{background:repeating-linear-gradient(45deg,var(--muted) 0 2px,transparent 2px 4px)}
 .sync::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--muted);margin-right:6px;vertical-align:middle}
 .sync[data-state=ok]::before{background:var(--accent)}
 .sync[data-state=err]{color:var(--danger)}
@@ -168,7 +171,6 @@ table.stats{width:100%;border-collapse:collapse;font-variant-numeric:tabular-num
       <button id="btnApplyText" class="primary">Färben</button>
       <button id="btnRemoveText">Entfernen</button>
     </div>
-    <div class="palette" id="palette" aria-label="Pinsel"></div>
     <div class="grid-wrap"><div class="grid" id="grid"></div></div>
     <div class="status" id="status">Klicken oder ziehen, um Felder zu färben. Zum Leeren den Radierer wählen.</div>
     <div class="quick">
@@ -180,7 +182,7 @@ table.stats{width:100%;border-collapse:collapse;font-variant-numeric:tabular-num
   </main>
 
   <div class="side">
-    <section class="panel">
+    <section class="panel brush-panel">
       <h2>Pinsel</h2>
       <div class="brush">
         <div class="brush-sw" id="brushSw"></div>
@@ -190,10 +192,12 @@ table.stats{width:100%;border-collapse:collapse;font-variant-numeric:tabular-num
         <label for="mixSel">Mischen mit</label>
         <select id="mixSel"></select>
       </div>
-      <h2 style="margin-top:6px">Aktionen &amp; Farben</h2>
+      <h2 class="actions-h" style="margin-top:6px">Aktionen &amp; Farben</h2>
       <div class="actions" id="actions"></div>
-      <div class="eraser" id="eraser"><span class="key">0</span>Radierer</div>
-      <div class="row"><button id="btnAddAction">+ Aktion</button></div>
+      <div class="tools-row">
+        <div class="eraser" id="eraser"><span class="key">0</span>Radierer</div>
+        <button id="btnAddAction">+ Aktion</button>
+      </div>
       <p class="hint kbd-only">Alle Kürzel laufen über <b>Shift</b> und gehen auch im Textfeld:<br>
         Shift + 1–9 wählt eine Aktion (löst Mixe auf) · Shift + 0 Radierer<br>
         Shift halten, zwei Zahlen drücken = 50/50-Mix, z. B. 1 dann 2 · 1 dann 0 = mit Fold<br>
@@ -201,7 +205,7 @@ table.stats{width:100%;border-collapse:collapse;font-variant-numeric:tabular-num
         Im Textfeld: Enter färbt, Shift + Enter entfernt</p>
     </section>
 
-    <section class="panel">
+    <section class="panel stats-panel">
       <h2>Kombos</h2>
       <table class="stats" id="stats"></table>
     </section>
@@ -602,7 +606,6 @@ function renderBrush() {
     state.actions.filter(x => x.id !== brush.a).map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join("");
   s.value = brush.b || ""; s.disabled = !a;
   updatePreview();
-  renderPalette();
 }
 // Aktionsliste. Normal: Tipp auf die Zeile = Pinsel wählen (nimmt keinem Eingabefeld den Fokus).
 // Bearbeiten nur über ✎: dann Farbe, Name, ▲▼ und Löschen für genau diese Zeile.
@@ -708,32 +711,6 @@ grid.addEventListener("pointermove", e => {
 });
 window.addEventListener("pointerup", () => { if (painting) { painting = false; save(); } });
 grid.addEventListener("contextmenu", e => e.preventDefault());
-
-// ---------- Pinsel-Leiste (Handy) ----------
-// Tipp auf Aktion = nur diese. "½ Mix" an, dann Tipp auf zweite Aktion (oder "Leer") = 50/50.
-let mixMode = false;
-function renderPalette() {
-  const box = $("palette"); if (!box) return;
-  if (!brush.a) mixMode = false;
-  const chip = (cls, html, label, fn) => { const b = document.createElement("button"); b.type = "button"; b.className = "pchip " + cls; b.innerHTML = html; b.setAttribute("aria-label", label); b.addEventListener("mousedown", e => e.preventDefault()); b.addEventListener("click", fn); return b; };
-  box.innerHTML = "";
-  for (const a of state.actions) {
-    const cls = (brush.a === a.id ? "sel" : "") + (brush.b === a.id ? " partner" : "");
-    box.appendChild(chip(cls, `<span class="dot" style="background:${a.color}"></span>${esc(a.name)}`, a.name, () => {
-      if (mixMode && brush.a && brush.a !== a.id) { brush.b = brush.b === a.id ? null : a.id; mixMode = false; }
-      else { brush = { a: a.id, b: null }; mixMode = false; }
-      renderActions();
-    }));
-  }
-  if (mixMode) box.appendChild(chip(brush.b === FOLD ? "partner" : "", `<span class="dot" style="background:var(--cell-s)"></span>Leer`, "Mit leer mischen", () => { brush.b = brush.b === FOLD ? null : FOLD; mixMode = false; renderActions(); }));
-  box.appendChild(chip("toggle" + (mixMode || brush.b ? " on" : ""), mixMode ? "½ Partner wählen" : brush.b ? "½ Mix ✕" : "½ Mix", "50/50-Mix", () => {
-    if (!brush.a) { toast("Erst eine Aktion wählen"); return; }
-    if (brush.b && !mixMode) { brush.b = null; renderActions(); return; } // Mix auflösen
-    mixMode = !mixMode; renderPalette();
-  }));
-  box.appendChild(chip("eraser-chip" + (brush.a === null ? " sel" : ""), `<span class="dot"></span>Radierer`, "Radierer", () => { brush = { a: null, b: null }; mixMode = false; renderActions(); }));
-  const selEl = box.querySelector(".pchip.sel"); if (selEl && box.scrollWidth > box.clientWidth) selEl.scrollIntoView({ block: "nearest", inline: "nearest" });
-}
 
 // ---------- Range-Textfeld ----------
 const rIn = $("rangeInput");
