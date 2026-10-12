@@ -144,6 +144,7 @@ table.stats{width:100%;border-collapse:collapse;font-variant-numeric:tabular-num
 .sync[data-state=err]{color:var(--danger)}
 .sync[data-state=err]::before{background:var(--danger)}
 
+.update-banner{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:20;background:var(--accent);color:var(--accent-ink);border:none;border-radius:20px;padding:10px 16px;font-weight:700;box-shadow:0 6px 20px rgb(0 0 0 / .2);max-width:calc(100vw - 32px)}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:8px;font-weight:600;opacity:0;transition:opacity .2s;pointer-events:none;max-width:calc(100vw - 32px)}
 .toast.show{opacity:1}
 @media (prefers-reduced-motion:reduce){.toast{transition:none}}
@@ -217,6 +218,7 @@ table.stats{width:100%;border-collapse:collapse;font-variant-numeric:tabular-num
 
 <script>
 (() => {
+const BUILD = "20261012-143233"; // wird beim Veröffentlichen gesetzt (scripts/bump-version.py)
 const RANKS = "AKQJT98765432";
 const STORE = "range-matrix-v1";
 const FOLD = "__fold"; // Mix-Partner "leer": 50 % Aktion, 50 % nichts
@@ -612,13 +614,14 @@ function renderBrush() {
 // Bearbeiten nur über ✎: dann Farbe, Name, ▲▼ und Löschen für genau diese Zeile.
 let editingId = null;
 const finePointer = matchMedia("(pointer: fine)").matches;
-function renderActions() {
+function renderActions() { keepScroll(renderActionsInner); }
+function renderActionsInner() {
   const box = $("actions");
   const editing = box.querySelector(".action.editing input[type=text]");
   const keepFocus = editing && document.activeElement === editing;
   box.innerHTML = "";
   state.actions.forEach((a, i) => box.appendChild(editingId === a.id ? editRow(a, i) : viewRow(a, i)));
-  if (keepFocus) { const n = box.querySelector(".action.editing input[type=text]"); n?.focus(); }
+  if (keepFocus) { const n = box.querySelector(".action.editing input[type=text]"); focusQuiet(n); }
   $("eraser").classList.toggle("sel", brush.a === null);
   renderBrush();
 }
@@ -629,7 +632,7 @@ function viewRow(a, i) {
   // Fokus nicht wegnehmen (z. B. aus dem Range-Textfeld)
   row.addEventListener("mousedown", e => { if (!e.target.closest("button")) e.preventDefault(); });
   row.addEventListener("click", e => {
-    if (e.target.closest(".edit")) { editingId = a.id; renderActions(); if (finePointer) $("n-" + a.id)?.select(); return; }
+    if (e.target.closest(".edit")) { editingId = a.id; renderActions(); if (finePointer) { focusQuiet($("n-" + a.id)); $("n-" + a.id)?.select(); } return; }
     if (e.shiftKey && brush.a && brush.a !== a.id) brush.b = brush.b === a.id ? null : a.id;
     else if (!e.shiftKey) brush = { a: a.id, b: null };
     renderActions();
@@ -687,7 +690,13 @@ function renderRanges() {
   }
   if (document.activeElement !== $("rangeName")) $("rangeName").value = cur().name;
 }
-function renderAll() { renderRanges(); renderActions(); renderGrid(); renderStats(); }
+// Neu zeichnen ohne dass die Seite springt (Safari hat kein zuverlässiges Scroll-Anchoring)
+function keepScroll(fn) {
+  const x = window.scrollX, y = window.scrollY;
+  try { return fn(); } finally { if (window.scrollY !== y || window.scrollX !== x) window.scrollTo(x, y); }
+}
+const focusQuiet = el => { if (el) el.focus({ preventScroll: true }); };
+function renderAll() { keepScroll(() => { renderRanges(); renderActions(); renderGrid(); renderStats(); }); }
 
 // ---------- Malen ----------
 let painting = false, mode = "paint", lastCell = null;
@@ -717,11 +726,15 @@ grid.addEventListener("contextmenu", e => e.preventDefault());
 const rIn = $("rangeInput");
 let preview = [];
 function autoSize() {
-  rIn.style.height = "auto";
-  if (!rIn.value) { rIn.style.overflowY = "hidden"; return; } // leer: eine Zeile, Platzhalter wird gekürzt
-  const max = window.innerHeight * .4;
-  rIn.style.height = Math.min(rIn.scrollHeight + 2, max) + "px";
-  rIn.style.overflowY = rIn.scrollHeight + 2 > max ? "auto" : "hidden";
+  keepScroll(() => { // "height: auto" lässt die Seite kurz schrumpfen – ohne keepScroll springt sie
+    const old = rIn.style.height;
+    rIn.style.height = "auto";
+    if (!rIn.value) { rIn.style.overflowY = "hidden"; return; } // leer: eine Zeile, Platzhalter wird gekürzt
+    const max = window.innerHeight * .4;
+    const h = Math.min(rIn.scrollHeight + 2, max) + "px";
+    rIn.style.height = h === old ? old : h;
+    rIn.style.overflowY = rIn.scrollHeight + 2 > max ? "auto" : "hidden";
+  });
 }
 window.addEventListener("resize", autoSize);
 document.fonts?.ready?.then(autoSize);
@@ -755,7 +768,7 @@ function updatePreview() {
 }
 function applyText(remove) {
   const txt = rIn.value.trim();
-  if (!txt) { toast("Erst Range-Text eingeben"); rIn.focus(); return; }
+  if (!txt) { toast("Erst Range-Text eingeben"); focusQuiet(rIn); return; }
   const full = parseFullRange(txt);
   const p = full ? null : parseRangeText(txt);
   const hands = full ? [...new Set(full.groups.flatMap(g => g.hands))] : p.hands;
@@ -794,12 +807,12 @@ $("btnCopy").addEventListener("click", async () => {
   const text = rangeToText(cur());
   try { await navigator.clipboard.writeText(text); toast("Range kopiert"); }
   catch (e) {
-    const ta = document.createElement("textarea"); ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
-    document.body.appendChild(ta); ta.select();
+    const ta = document.createElement("textarea"); ta.value = text; ta.style.position = "fixed"; ta.style.top = "0"; ta.style.left = "0"; ta.style.opacity = "0"; ta.setAttribute("readonly", "");
+    document.body.appendChild(ta); focusQuiet(ta); ta.select();
     let ok = false; try { ok = document.execCommand("copy"); } catch (_) {}
     ta.remove();
     if (ok) toast("Range kopiert");
-    else { rIn.value = text; autoSize(); rIn.focus(); rIn.select(); updatePreview(); toast("Kopieren blockiert – Text steht markiert im Eingabefeld"); }
+    else { rIn.value = text; autoSize(); focusQuiet(rIn); rIn.select(); updatePreview(); toast("Kopieren blockiert – Text steht markiert im Eingabefeld"); }
   }
 });
 
@@ -818,7 +831,7 @@ document.querySelector(".quick").addEventListener("click", e => {
 $("rangeName").addEventListener("input", e => { cur().name = e.target.value; renderRanges(); save(); });
 $("btnNew").addEventListener("click", () => {
   const r = { id: uid(), name: uniqueName("Neue Range", state.ranges), cells: {} };
-  state.ranges.push(r); state.active = r.id; renderAll(); save(); $("rangeName").select();
+  state.ranges.push(r); state.active = r.id; renderAll(); save(); focusQuiet($("rangeName")); $("rangeName").select();
 });
 $("btnDup").addEventListener("click", () => {
   const c = cur(), r = { id: uid(), name: uniqueName(c.name + " Kopie", state.ranges), cells: JSON.parse(JSON.stringify(c.cells)) };
@@ -837,7 +850,7 @@ $("btnDel").addEventListener("click", e => armed(e.target, "Sicher?", () => {
 $("btnAddAction").addEventListener("click", () => {
   const a = { id: uid(), name: "Aktion " + (state.actions.length + 1), color: PALETTE[state.actions.length % PALETTE.length] };
   state.actions.push(a); brush = { a: a.id, b: null }; editingId = a.id; renderAll(); save();
-  if (finePointer) $("n-" + a.id)?.select();
+  if (finePointer) { focusQuiet($("n-" + a.id)); $("n-" + a.id)?.select(); }
 });
 $("eraser").addEventListener("mousedown", e => e.preventDefault());
 $("eraser").addEventListener("click", () => { brush = { a: null, b: null }; renderActions(); });
@@ -871,9 +884,51 @@ document.addEventListener("keydown", e => {
 document.addEventListener("keyup", e => { if (e.key === "Shift") chord = false; });
 window.addEventListener("blur", () => { chord = false; });
 
+// Klicks auf Buttons nehmen dem Range-Feld nicht den Fokus (sonst klappt die Tastatur zu und die Seite springt)
+document.addEventListener("mousedown", e => { if (e.target.closest("button") && document.activeElement === rIn) e.preventDefault(); });
+
 // ---------- Kein Zoomen (iOS ignoriert user-scalable=no teilweise) ----------
 for (const ev of ["gesturestart", "gesturechange", "gestureend"]) document.addEventListener(ev, e => e.preventDefault(), { passive: false });
 document.addEventListener("touchmove", e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+
+// ---------- Updates ----------
+// Fragt version.json am Cache vorbei ab. Gibt es eine neuere Version, wird die Seite
+// frisch geladen – sofort, wenn du gerade nichts tippst, sonst über einen Hinweis.
+// Deine Ranges liegen im Browser-Speicher und bleiben dabei erhalten.
+let updateReady = null;
+async function checkUpdate() {
+  if (BUILD === "dev" || !/^https?:/.test(location.protocol)) return;
+  try {
+    const r = await fetch("version.json?t=" + Date.now(), { cache: "no-store" });
+    if (!r.ok) return;
+    const { build } = await r.json();
+    if (!build || build === BUILD) return;
+    let tried = null; try { tried = sessionStorage.getItem("update-tried"); } catch (e) {}
+    if (tried === build) return; // schon versucht, CDN liefert noch alt – nicht in Schleife laden
+    updateReady = build;
+    const busy = document.activeElement?.matches?.("input,textarea,select") || rIn.value.trim() || editingId || painting;
+    if (busy) showUpdateBanner(); else applyUpdate();
+  } catch (e) {}
+}
+async function applyUpdate() {
+  const build = updateReady; if (!build) return;
+  try { sessionStorage.setItem("update-tried", build); } catch (e) {}
+  // Zwischengespeicherte Dateien gezielt neu holen, damit der Neuladen nicht wieder die alte Seite zeigt
+  try { await Promise.all(["./", "index.html", "manifest.webmanifest"].map(u => fetch(u, { cache: "reload" }))); } catch (e) {}
+  location.reload();
+}
+function showUpdateBanner() {
+  if ($("updateBanner")) return;
+  const b = document.createElement("button");
+  b.id = "updateBanner"; b.type = "button"; b.className = "update-banner";
+  b.textContent = "Neue Version verfügbar – tippen zum Laden";
+  b.addEventListener("click", applyUpdate);
+  document.body.appendChild(b);
+}
+checkUpdate();
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") checkUpdate(); });
+window.addEventListener("pageshow", e => { if (e.persisted) checkUpdate(); });
+setInterval(() => { if (document.visibilityState === "visible") checkUpdate(); }, 5 * 60 * 1000);
 
 // ---------- Start ----------
 state = load();
