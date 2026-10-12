@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#1f6f54">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -35,6 +35,7 @@
 
 *{box-sizing:border-box}
 html,body{margin:0}
+html{touch-action:manipulation;-webkit-text-size-adjust:100%;text-size-adjust:100%}
 body{background:var(--bg);color:var(--ink);font:16px/1.4 var(--f-ui);padding-inline:max(16px,env(safe-area-inset-left,0px));padding-block:calc(16px + env(safe-area-inset-top,0px)) calc(32px + env(safe-area-inset-bottom,0px))}
 button,input,select,textarea{font:inherit;color:inherit}
 button{cursor:pointer;border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:6px 10px;font-weight:600}
@@ -91,7 +92,7 @@ h2{font-size:.78rem;text-transform:uppercase;letter-spacing:.09em;color:var(--mu
 .status.bad{color:var(--danger)}
 
 .textbar{display:flex;gap:6px;align-items:flex-start}
-.textbar textarea{flex:1;min-width:0;font:500 15px/1.45 var(--f-mono);border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:7px 10px;resize:none;overflow:hidden;max-height:40vh;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}
+.textbar textarea{flex:1;min-width:0;font:500 16px/1.45 var(--f-mono);border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:7px 10px;resize:none;overflow:hidden;max-height:40vh;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}
 .textbar textarea::placeholder{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .textbar button{flex:none}
 @media (max-width:520px){.textbar{display:grid;grid-template-columns:1fr 1fr}.textbar textarea{grid-column:1/-1}}
@@ -869,6 +870,10 @@ document.addEventListener("keydown", e => {
 }, true);
 document.addEventListener("keyup", e => { if (e.key === "Shift") chord = false; });
 window.addEventListener("blur", () => { chord = false; });
+
+// ---------- Kein Zoomen (iOS ignoriert user-scalable=no teilweise) ----------
+for (const ev of ["gesturestart", "gesturechange", "gestureend"]) document.addEventListener(ev, e => e.preventDefault(), { passive: false });
+document.addEventListener("touchmove", e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
 
 // ---------- Start ----------
 state = load();
